@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Materiales de la Profe — Subir y Descargar</title>
+  <style>
+    :root { --bg:#0b1020; --card:#141a33; --ink:#e8ecff; --muted:#a9b3d1; --accent:#6aa7ff; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    header{padding:20px 16px;border-bottom:1px solid #20274a;display:flex;gap:12px;align-items:center;justify-content:space-between}
+    .brand{font-weight:700;letter-spacing:.3px}
+    .wrap{max-width:940px;margin:0 auto;padding:16px}
+    .card{background:var(--card);border:1px solid #20274a;border-radius:16px;padding:16px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    button{background:var(--accent);border:0;color:#08132b;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer}
+    button.ghost{background:transparent;color:var(--ink);border:1px solid #2a3566}
+    input[type="text"],input[type="email"],input[type="password"]{padding:10px;border-radius:8px;border:1px solid #2a3566;background:#0e1533;color:#e8ecff;width:100%}
+    .hint{color:var(--muted);font-size:.95rem}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    @media (min-width:700px){ .grid{grid-template-columns:1.2fr .8fr} }
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid #222a55}
+    th{color:#c6cff5;text-align:left;font-weight:700}
+    a{color:#b5ccff}
+    .tag{display:inline-block;padding:2px 8px;border:1px solid #2a3566;border-radius:999px;color:#cfe1ff;font-size:.8rem}
+    .hide{display:none}
+    .footer {text-align: center;padding: 16px;margin-top: 20px;border-top: 1px solid #20274a;font-size: 0.9rem;color: var(--muted);}
+    .footer a {color: var(--accent);text-decoration: none;}
+    .footer a:hover {text-decoration: underline;}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <div class="brand">📚 Materiales de Inglés</div>
+      <span class="tag" id="statusTag">Visitante</span>
+    </div>
+    <div class="row">
+      <button id="loginBtn">Iniciar sesión</button>
+      <button id="logoutBtn" class="ghost hide">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="grid">
+
+      <!-- Formulario login -->
+      <section id="loginCard" class="card hide">
+        <h2>Iniciar sesión (profe)</h2>
+        <input type="email" id="emailInput" placeholder="Correo" />
+        <input type="password" id="passwordInput" placeholder="Contraseña" />
+        <button id="doLoginBtn">Entrar</button>
+      </section>
+
+      <!-- Solo la profe -->
+      <section id="uploadCard" class="card hide">
+        <h2>Zona de enlaces (solo profe)</h2>
+        <p class="hint">Pega el link de Drive o Docs.</p>
+        <div class="row">
+          <input type="text" id="linkInput" placeholder="https://..." />
+          <button id="addLinkBtn">Agregar</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Descargas para estudiantes</h2>
+        <p class="hint">No necesitas cuenta para descargar.</p>
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr><th>Archivo</th><th>Acción</th></tr>
+            </thead>
+            <tbody id="filesTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+    import { 
+      getFirestore, collection, addDoc, query, orderBy, serverTimestamp, 
+      doc, updateDoc, onSnapshot 
+    } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+
+    // 🔹 Configuración Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyBm3-nTQS-HMHDDgxLfHhXdxNIpUGkPfKA",
+      authDomain: "english-a1ae2.firebaseapp.com",
+      projectId: "english-a1ae2",
+      storageBucket: "english-a1ae2.appspot.com",
+      messagingSenderId: "66644858402",
+      appId: "1:66644858402:web:a89e8ab6a10dbc46cf1c7b",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // 🔹 Elementos
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const statusTag = document.getElementById("statusTag");
+    const loginCard = document.getElementById("loginCard");
+    const uploadCard = document.getElementById("uploadCard");
+    const emailInput = document.getElementById("emailInput");
+    const passwordInput = document.getElementById("passwordInput");
+    const doLoginBtn = document.getElementById("doLoginBtn");
+    const addLinkBtn = document.getElementById("addLinkBtn");
+    const linkInput = document.getElementById("linkInput");
+    const filesTable = document.getElementById("filesTable");
+
+    let isTeacher = false;
+    let listening = false;
+
+    // 🔹 Mostrar formulario login
+    loginBtn.addEventListener("click", () => {
+      loginCard.classList.remove("hide");
+    });
+
+    // 🔹 Login real con Firebase
+    doLoginBtn.addEventListener("click", async () => {
+      try {
+        await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+        loginCard.classList.add("hide");
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    });
+
+    // 🔹 Logout
+    logoutBtn.addEventListener("click", async () => {
+      await signOut(auth);
+    });
+
+    // 🔹 Estado de sesión
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        statusTag.textContent = "Profe";
+        isTeacher = true;
+        loginBtn.classList.add("hide");
+        logoutBtn.classList.remove("hide");
+        uploadCard.classList.remove("hide");
+      } else {
+        statusTag.textContent = "Visitante";
+        isTeacher = false;
+        loginBtn.classList.remove("hide");
+        logoutBtn.classList.add("hide");
+        uploadCard.classList.add("hide");
+      }
+
+      if (!listening) {
+        escucharLinks();
+        listening = true;
+      }
+    });
+
+    // 🔹 Subir link
+    addLinkBtn.addEventListener("click", async () => {
+      const url = linkInput.value.trim();
+      if (!url) return;
+      try {
+        await addDoc(collection(db, "links"), { 
+          url: convertirLink(url), 
+          visible: true,
+          createdAt: serverTimestamp() 
+        });
+        linkInput.value = "";
+      } catch (e) {
+        alert("Error al guardar: " + e.message);
+      }
+    });
+
+    // 🔹 Escuchar links en tiempo real
+    function escucharLinks() {
+      const q = query(collection(db, "links"), orderBy("createdAt", "desc"));
+      onSnapshot(q, (snapshot) => {
+        filesTable.innerHTML = "";
+
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+
+          // 👩‍🎓 Estudiantes no ven ocultos
+          if (!isTeacher && !data.visible) return;
+
+          const tr = document.createElement("tr");
+          let acciones = `<a href="${data.url}" target="_blank">Descargar</a>`;
+
+          // 👩‍🏫 Profesora → puede ocultar/restaurar
+          if (isTeacher) {
+            if (data.visible) {
+              acciones += ` <button onclick="ocultarLink('${docSnap.id}', false)">Eliminar</button>`;
+            } else {
+              acciones += ` <button onclick="ocultarLink('${docSnap.id}', true)">Restaurar</button>`;
+            }
+          }
+
+          tr.innerHTML = `<td>${data.url}</td><td>${acciones}</td>`;
+          filesTable.appendChild(tr);
+        });
+      });
+    }
+
+    // 🔹 Ocultar/restaurar link (no borra, solo cambia visible)
+    window.ocultarLink = async function(id, nuevoEstado) {
+      try {
+        const ref = doc(db, "links", id);
+        await updateDoc(ref, { visible: nuevoEstado });
+      } catch (e) {
+        alert("Error al actualizar: " + e.message);
+      }
+    };
+
+    // 🔹 Convertir links de Docs/Drive en directos
+    function convertirLink(url) {
+      let match;
+
+      // Google Docs → exportar como PDF
+      if (url.includes("docs.google.com/document")) {
+        match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+          const id = match[1];
+          return `https://docs.google.com/document/d/${id}/export?format=pdf`;
+        }
+      }
+
+      // Drive → descarga directa
+      if (url.includes("drive.google.com/file")) {
+        match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+          const id = match[1];
+          return `https://drive.google.com/uc?export=download&id=${id}`;
+        }
+      }
+
+      return url;
+    }
+  </script>
+
+  <footer class="footer">
+    <p>© 2025 Materiales de Inglés — Desarrollado por <a href="https://www.instagram.com/87241_/" target="_blank">Sebastian Suarez</a></p>
+    <p>Alias El Parce</p>
+  </footer>
+</body>
+</html>
